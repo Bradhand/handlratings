@@ -1,0 +1,6 @@
+"0",""
+"0",""
+"0","df <- load_cfb_pbp(year = 2025, api_key = Sys.getenv(""CFBD_API_KEY""))"
+"2","Error in load_cfb_pbp(year = 2025, api_key = Sys.getenv(""CFBD_API_KEY"")) : 
+  could not find function ""load_cfb_pbp""
+"

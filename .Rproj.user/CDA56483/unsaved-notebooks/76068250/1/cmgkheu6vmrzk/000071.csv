@@ -1,0 +1,7 @@
+"0",""
+"0","df %>% group_by(def_pos_team) %>%"
+"0","  filter(!(is.na(EPA)))%>%"
+"0","  filter(home_team_division == 'fbs' &"
+"0","          away_team_division == 'fbs')%>%"
+"0","  summarise(EPA = mean(EPA)) %>%"
+"0","  arrange(EPA)"

@@ -1,0 +1,27 @@
+"0","# Install if not already installed"
+"0","install.packages(""cfbfastR"")"
+"2","WARNING: Rtools is required to build R packages but is not currently installed. Please download and install the appropriate version of Rtools before proceeding:
+
+https://cran.rstudio.com/bin/windows/Rtools/
+"
+"2","trying URL 'https://cran.rstudio.com/bin/windows/contrib/4.4/cfbfastR_2.0.0.zip'
+"
+"2","Content type 'application/zip'"
+"2"," length 797356 bytes (778 KB)
+"
+"2","downloaded 778 KB
+
+"
+"1","package ‘cfbfastR’ successfully unpacked and MD5 sums checked
+"
+"1","
+"
+"1",""
+"1","The downloaded binary packages are in
+	C:\Users\handl\AppData\Local\Temp\RtmpIxmU7B\downloaded_packages"
+"1",""
+"1","
+"
+"0","# Load it"
+"0","library(cfbfastR)"
+"0",""
