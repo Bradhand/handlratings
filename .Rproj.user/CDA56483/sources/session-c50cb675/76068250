@@ -1,11 +1,11 @@
 {
     "id": "76068250",
-    "path": null,
-    "project_path": null,
+    "path": "~/HANDLRatings/handl.Rmd",
+    "project_path": "handl.Rmd",
     "type": "r_markdown",
-    "hash": "0",
+    "hash": "4096918297",
     "contents": "",
-    "dirty": true,
+    "dirty": false,
     "created": 1760560174491.0,
     "source_on_save": false,
     "relative_order": 1,
@@ -18,11 +18,11 @@
         "scrollLine": "105"
     },
     "folds": "",
-    "lastKnownWriteTime": 8386095505962311794,
-    "encoding": "",
+    "lastKnownWriteTime": 1761019061,
+    "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1760573095186,
+    "last_content_update": 1761019061244,
     "read_only": false,
     "read_only_alternatives": []
 }

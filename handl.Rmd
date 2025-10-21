@@ -1,0 +1,138 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+# Install if not already installed
+install.packages("cfbfastR")
+install.packages("tidyverse")
+
+# Load it
+library(cfbfastR)
+library(tidyverse)
+
+```
+
+```{r}
+Sys.setenv(CFBD_API_KEY = "HSHzfpq6dCSMrlkihoPaMm2jZ2zlbUfIbdn1YHBRraJhMCWdYzxzoceQRG1DDRi/")
+
+```
+
+
+
+```{r}
+
+
+df <- load_cfb_pbp(year = 2025, api_key = Sys.getenv("CFBD_API_KEY"))
+```
+
+
+
+```{r}
+colnames(df)
+head(df)
+
+df %>% group_by(def_pos_team) %>%
+  filter(!(is.na(EPA)))%>%
+  filter(home_team_division == 'fbs' &
+          away_team_division == 'fbs')%>%
+  summarise(EPA = mean(EPA)) %>%
+  arrange(EPA)
+  
+
+pbp <- df %>% 
+  filter(
+    !(
+      (period == 2 & (score_diff) >= 28) |
+      (period == 3 & (score_diff) >= 28) |
+      (period == 4 & (score_diff) >= 22) |
+      (period == 4 & clock_minutes<=3 & (score_diff) > 16) |
+      is.na(EPA)
+    )
+  )%>%
+  filter(home_team_division == 'fbs' &
+          away_team_division == 'fbs') %>%
+  select('pos_team', 'def_pos_team', 'game_id', 'EPA')
+  
+  
+head(pbp)
+
+
+```
+
+
+
+```{r}
+
+off <- pbp %>%
+  group_by(pos_team) %>%
+  summarize(off_epa = mean(EPA))
+  
+def <- pbp %>%  
+  group_by(def_pos_team) %>%
+  summarize(def_epa = mean(EPA))
+
+```
+
+
+```{r}
+
+pbp <- pbp %>%
+  left_join(off, by = "pos_team") %>%
+  left_join(def, by = c("def_pos_team")) %>%
+  mutate(adjOffEPA = EPA - def_epa) %>%
+  mutate(adjDefEPA =  EPA - off_epa)
+
+
+
+```
+
+
+```{r}
+
+off <- pbp %>%
+  group_by(pos_team) %>%
+  summarize(off_epa = mean(adjOffEPA)) %>%
+  arrange(desc(off_epa))
+
+
+def <- pbp %>%
+  group_by(def_pos_team) %>%
+  summarize(def_epa = mean(adjDefEPA)) %>%
+  arrange(desc(def_epa)) 
+
+
+```
+
+
+```{r}
+handl <- left_join(off,def, by = c("pos_team" = "def_pos_team"))
+
+handl <-handl %>% mutate(rating = (off_epa - def_epa)*100) %>%
+  arrange(desc(rating)) %>%
+  select(pos_team, rating) %>%
+  rename(
+    team = pos_team,
+    'HANDL Rating' = rating
+  )
+```
+
+
+```{r}
+library(knitr)
+library(kableExtra)
+
+
+# Make a nice-looking HTML table
+table_html <- kable(handl, format = "html", table.attr = "style='width:100%;'") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
+# Save it as an HTML file
+save_kable(table_html, "handl.html")
+
+
+```
+
+
