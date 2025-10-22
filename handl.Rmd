@@ -26,6 +26,8 @@ Sys.setenv(CFBD_API_KEY = "HSHzfpq6dCSMrlkihoPaMm2jZ2zlbUfIbdn1YHBRraJhMCWdYzxzo
 
 
 df <- load_cfb_pbp(year = 2025, api_key = Sys.getenv("CFBD_API_KEY"))
+logos <- load_cfb_teams(fbs_only = TRUE) %>%
+  select(school,logo)
 ```
 
 
@@ -103,6 +105,7 @@ def <- pbp %>%
   summarize(def_epa = mean(adjDefEPA)) %>%
   arrange(desc(def_epa)) 
 
+pbp %>% summarize(median(def_epa))
 
 ```
 
@@ -110,29 +113,87 @@ def <- pbp %>%
 ```{r}
 handl <- left_join(off,def, by = c("pos_team" = "def_pos_team"))
 
-handl <-handl %>% mutate(rating = (off_epa - def_epa)*100) %>%
+handl <-handl %>% mutate(rating = round((off_epa - def_epa)*100,2),
+                         off_epa = round((off_epa)*100,2),
+                         def_epa = round((def_epa)*-100),2) %>%
   arrange(desc(rating)) %>%
-  select(pos_team, rating) %>%
+  select(pos_team, rating, off_epa, def_epa) %>%
   rename(
-    team = pos_team,
-    'HANDL Rating' = rating
+    Team = pos_team,
+    'HANDL Rating' = rating,
+    'Off Rating' = off_epa,
+    'Def Rating' = def_epa
   )
+
+
+
+handl <- handl %>% 
+  mutate('HANDL Rank' = row_number()) %>%
+  arrange(desc(`Off Rating`)) %>% mutate('Off Rank' = row_number()) %>%
+  arrange(desc(`Def Rating`)) %>% mutate('Def Rank' = row_number()) %>%
+  left_join(logos, by = c("Team" = "school")) %>%
+  select(logo,Team, `HANDL Rating`, `HANDL Rank`, `Off Rating`, `Off Rank`, `Def Rating`, `Def Rank`) %>%
+  arrange(desc('HANDL Rating' )) 
+
+
+handl$Logo <- paste0('<img src="', df$logo, '" height="40">')
+
 ```
 
 
 ```{r}
-library(knitr)
-library(kableExtra)
+#library(knitr)
+#library(kableExtra)
 
 
 # Make a nice-looking HTML table
-table_html <- kable(handl, format = "html", table.attr = "style='width:100%;'") %>%
-  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+#table_html <- kable(handl, format = "html", table.attr = "style='width:100%;'") %>%
+#  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 
 # Save it as an HTML file
-save_kable(table_html, "handl.html")
+#save_kable(table_html, "handl.html")
+
+
+#library(DT)
+#library(htmlwidgets)
+
+w <- datatable(handl, options = list(pageLength = 20, autoWidth = TRUE))
+
+w <- datatable(
+  handl,
+  escape = FALSE,  # allow HTML (needed for images)
+  options = list(
+    pageLength = 10,
+    autoWidth = TRUE,
+    columnDefs = list(list(width = '60px', targets = 0))  # adjust logo column width
+  )
+)
+
+# write a single self-contained HTML file
+saveWidget(w, "table.html", selfcontained = TRUE)
 
 
 ```
+
+
+```{r}
+
+o_plays <- pbp %>% group_by(pos_team) %>%
+  summarise(c = n(),
+            g = n_distinct(game_id)) %>%
+  mutate(off_ppg = c/g) %>%
+  select(pos_team,
+         off_ppg)
+
+d_plays <- pbp %>% group_by(def_pos_team) %>%
+  summarise(c = n(),
+            g = n_distinct(game_id)) %>%
+  mutate(def_ppg = c/g)%>%
+  select(def_pos_team,
+         def_ppg)
+
+```
+
+
 
 
