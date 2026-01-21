@@ -6,8 +6,8 @@ output: html_notebook
 
 ```{r}
 # Install if not already installed
-install.packages("cfbfastR")
-install.packages("tidyverse")
+#install.packages("cfbfastR")
+#install.packages("tidyverse")
 
 # Load it
 library(cfbfastR)
@@ -67,55 +67,98 @@ head(pbp)
 
 
 ```{r}
+# Improved EPA calculations with iterative opponent adjustment
+# This converges to more accurate ratings by repeatedly adjusting for opponent strength
 
+# Start with raw EPA calculations
 off <- pbp %>%
   group_by(pos_team) %>%
-  summarize(off_epa = mean(EPA))
-  
-def <- pbp %>%  
-  group_by(def_pos_team) %>%
-  summarize(def_epa = mean(EPA))
-
-```
-
-
-```{r}
-
-pbp <- pbp %>%
-  left_join(off, by = "pos_team") %>%
-  left_join(def, by = c("def_pos_team")) %>%
-  mutate(adjOffEPA = EPA - def_epa) %>%
-  mutate(adjDefEPA =  EPA - off_epa)
-
-
-
-```
-
-
-```{r}
-
-off <- pbp %>%
-  group_by(pos_team) %>%
-  summarize(off_epa = mean(adjOffEPA)) %>%
-  arrange(desc(off_epa))
-
+  summarize(off_epa = mean(EPA), off_plays = n())
 
 def <- pbp %>%
   group_by(def_pos_team) %>%
-  summarize(def_epa = mean(adjDefEPA)) %>%
-  arrange(desc(def_epa)) 
+  summarize(def_epa = mean(EPA), def_plays = n())
 
-pbp %>% summarize(median(def_epa))
+# Iterative opponent adjustment (5 iterations for convergence)
+for (i in 1:5) {
+  # Join current ratings to play-by-play
+  pbp_adj <- pbp %>%
+    left_join(off %>% select(pos_team, off_epa), by = "pos_team") %>%
+    left_join(def %>% select(def_pos_team, def_epa), by = "def_pos_team")
+
+  # Calculate league average EPA
+  league_avg <- mean(pbp$EPA, na.rm = TRUE)
+
+  # Recalculate offensive EPA adjusted for defensive opponent strength
+  off <- pbp_adj %>%
+    group_by(pos_team) %>%
+    summarize(
+      off_epa = mean(EPA - (def_epa - league_avg), na.rm = TRUE),
+      off_plays = n()
+    )
+
+  # Recalculate defensive EPA adjusted for offensive opponent strength
+  def <- pbp_adj %>%
+    group_by(def_pos_team) %>%
+    summarize(
+      def_epa = mean(EPA - (off_epa - league_avg), na.rm = TRUE),
+      def_plays = n()
+    )
+}
+
+# Final sorting
+off <- off %>% arrange(desc(off_epa))
+def <- def %>% arrange(def_epa)  # Lower is better for defense
 
 ```
 
 
 ```{r}
-handl <- left_join(off,def, by = c("pos_team" = "def_pos_team"))
+# Apply regression to the mean based on sample size for stability
+# Teams with fewer plays regress more toward average
 
-handl <-handl %>% mutate(rating = round((off_epa - def_epa)*100,2),
-                         off_epa = round((off_epa)*100,2),
-                         def_epa = round((def_epa)*-100),2) %>%
+avg_plays <- mean(c(off$off_plays, def$def_plays))
+regression_factor <- 0.3  # How much to regress small samples
+
+off <- off %>%
+  mutate(
+    reliability = pmin(off_plays / avg_plays, 1),
+    off_epa = off_epa * (reliability + (1 - reliability) * (1 - regression_factor))
+  )
+
+def <- def %>%
+  mutate(
+    reliability = pmin(def_plays / avg_plays, 1),
+    def_epa = def_epa * (reliability + (1 - reliability) * (1 - regression_factor))
+  )
+
+```
+
+
+```{r}
+# Summary statistics
+cat("Offensive EPA range:", round(min(off$off_epa), 3), "to", round(max(off$off_epa), 3), "\n")
+cat("Defensive EPA range:", round(min(def$def_epa), 3), "to", round(max(def$def_epa), 3), "\n")
+cat("League average EPA:", round(mean(pbp$EPA), 4), "\n")
+
+```
+
+
+```{r}
+# Create final HANDL ratings table
+handl <- left_join(
+  off %>% select(pos_team, off_epa),
+  def %>% select(def_pos_team, def_epa),
+  by = c("pos_team" = "def_pos_team")
+)
+
+# Calculate composite rating (offense - defense since lower def EPA is better)
+handl <- handl %>%
+  mutate(
+    rating = round((off_epa - def_epa) * 100, 2),
+    off_epa = round(off_epa * 100, 2),
+    def_epa = round(def_epa * -100, 2)  # Flip sign so higher = better defense
+  ) %>%
   arrange(desc(rating)) %>%
   select(pos_team, rating, off_epa, def_epa) %>%
   rename(
@@ -125,25 +168,25 @@ handl <-handl %>% mutate(rating = round((off_epa - def_epa)*100,2),
     'Def Rating' = def_epa
   )
 
-
-
-handl <- handl %>% 
+# Add rankings
+handl <- handl %>%
   mutate('HANDL Rank' = row_number()) %>%
   arrange(desc(`Off Rating`)) %>% mutate('Off Rank' = row_number()) %>%
   arrange(desc(`Def Rating`)) %>% mutate('Def Rank' = row_number()) %>%
   left_join(logos, by = c("Team" = "school")) %>%
-  select(logo,Team, `HANDL Rating`, `HANDL Rank`, `Off Rating`, `Off Rank`, `Def Rating`, `Def Rank`) %>%
-  arrange(desc('HANDL Rating' )) 
+  select(logo, Team, `HANDL Rating`, `HANDL Rank`, `Off Rating`, `Off Rank`, `Def Rating`, `Def Rank`)
 
+# Format logo column for HTML display
+handl$logo <- paste0('<img src="', handl$logo, '" height="40">')
 
-handl$Logo <- paste0('<img src="', df$logo, '" height="40">')
-
+# Final sort and rename
+handl <- handl %>% arrange(desc(`HANDL Rating`)) %>% rename(" " = logo)
 ```
 
 
 ```{r}
-#library(knitr)
-#library(kableExtra)
+library(knitr)
+library(kableExtra)
 
 
 # Make a nice-looking HTML table
@@ -154,23 +197,24 @@ handl$Logo <- paste0('<img src="', df$logo, '" height="40">')
 #save_kable(table_html, "handl.html")
 
 
-#library(DT)
-#library(htmlwidgets)
+library(DT)
+library(htmlwidgets)
 
-w <- datatable(handl, options = list(pageLength = 20, autoWidth = TRUE))
+#w <- datatable(handl, options = list(pageLength = 20, autoWidth = TRUE))
 
 w <- datatable(
   handl,
   escape = FALSE,  # allow HTML (needed for images)
+  rownames = FALSE, 
   options = list(
-    pageLength = 10,
+    pageLength = 50,
     autoWidth = TRUE,
     columnDefs = list(list(width = '60px', targets = 0))  # adjust logo column width
   )
 )
 
 # write a single self-contained HTML file
-saveWidget(w, "table.html", selfcontained = TRUE)
+saveWidget(w, "table.html", selfcontained = FALSE, libdir = "lib")
 
 
 ```
@@ -194,6 +238,96 @@ d_plays <- pbp %>% group_by(def_pos_team) %>%
 
 ```
 
+```{r}
+
+top30 <- handl %>% rename(logo = " ") %>%
+  mutate(rank = row_number()) %>%
+  filter(`Def Rank`<=30) %>%
+  select(`Def Rank`, logo)
+```
 
 
+
+```{r}
+library(ggplot2)
+library(ggimage)
+library(stringr)
+# Create the plot
+
+top30$logo <- str_extract(top30$logo, "(?<=src=\")[^\"]+")
+```
+
+
+```{r}
+
+
+top30 <- top30 %>%
+  mutate(
+    rank = as.numeric(`Def Rank`),
+    # Create grid positions: 5 columns per row
+    col = (rank - 1) %% 5 + 1,  # column number 1-5
+    row = -( (rank - 1) %/% 5 ),
+    label_x = col - .5 # row number, negative to plot top to bottom
+  ) %>%
+  arrange(rank)
+
+# Plot grid
+p <- ggplot(top30, aes(x = col, y = row)) +
+  geom_image(aes(image = logo), size = 0.1) +
+  geom_text(aes(label = rank, x = label_x), size = 7, hjust = .2) +  # rank above logo
+  scale_y_continuous(expand = c(0.2, 0)) +
+  scale_x_continuous(expand = c(0.2, 0)) +
+  ggtitle("HANDL Week 17 Top 30 Defensive Power Rankings") + 
+  theme_void() +
+  theme(plot.margin = margin(.5,.5,.5,.5, "cm"),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5, vjust = -4.5),
+    panel.background = element_rect(fill = "gray92"))
+
+
+
+# Save as JPEG
+ggsave("top30_grid.jpeg", p, width = 10, height = 6, dpi = 300)
+```
+
+
+
+
+
+
+```{r}
+
+df %>% 
+  filter(
+    !(
+      (period == 2 & (score_diff) >= 28) |
+      (period == 3 & (score_diff) >= 28) |
+      (period == 4 & (score_diff) >= 22) |
+      (period == 4 & clock_minutes<=3 & (score_diff) > 16) |
+      is.na(EPA)
+    )
+  )%>%
+  filter(home_team_division == 'fbs' &
+          away_team_division == 'fbs') %>%
+  select('pos_team', 'def_pos_team', 'game_id', 'EPA')
+
+df %>%
+  select('pos_team', 'drive_id', 'drive_time_minutes_elapsed', 'drive_time_seconds_elapsed') %>%
+  group_by(pos_team, drive_id) %>%
+  group_by(pos_team) %>%
+  summarize(avg_min = mean(drive_time_minutes_elapsed),
+            avg_sec = mean(drive_time_seconds_elapsed)) %>%
+  mutate(time = 60*avg_min + avg_sec) %>%
+  arrange(time) %>%
+  filter(!is.na(time)) %>%
+  mutate(min = floor(time/60),
+         sec = time%%60)
+
+
+colnames(df)
+
+
+
+```
 
