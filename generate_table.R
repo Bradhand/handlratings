@@ -27,80 +27,38 @@ pbp <- df %>%
   filter(home_team_division == 'fbs' & away_team_division == 'fbs') %>%
   select('pos_team', 'def_pos_team', 'game_id', 'EPA')
 
-cat("Calculating EPA with iterative opponent adjustment...\n")
+cat("Calculating team EPA...\n")
 
-# Start with raw EPA calculations
+# Calculate offensive EPA (higher = better offense)
 off <- pbp %>%
   group_by(pos_team) %>%
-  summarize(off_epa = mean(EPA), off_plays = n())
+  summarize(off_epa = mean(EPA))
 
+# Calculate defensive EPA - POSITIVE means defense is creating value (stops, turnovers)
 def <- pbp %>%
   group_by(def_pos_team) %>%
-  summarize(def_epa = mean(EPA), def_plays = n())
+  summarize(def_epa = mean(EPA))
 
-# Iterative opponent adjustment (5 iterations for convergence)
-for (i in 1:5) {
-  pbp_adj <- pbp %>%
-    left_join(off %>% select(pos_team, off_epa), by = "pos_team") %>%
-    left_join(def %>% select(def_pos_team, def_epa), by = "def_pos_team")
+# Combine: higher off_epa = better, lower def_epa = better
+team_ratings <- left_join(off, def, by = c("pos_team" = "def_pos_team")) %>%
+  mutate(raw_rating = off_epa - def_epa)
 
-  league_avg <- mean(pbp$EPA, na.rm = TRUE)
+cat("\nCreating HANDL ratings table...\n")
 
-  off <- pbp_adj %>%
-    group_by(pos_team) %>%
-    summarize(
-      off_epa = mean(EPA - (def_epa - league_avg), na.rm = TRUE),
-      off_plays = n()
-    )
-
-  def <- pbp_adj %>%
-    group_by(def_pos_team) %>%
-    summarize(
-      def_epa = mean(EPA - (off_epa - league_avg), na.rm = TRUE),
-      def_plays = n()
-    )
-}
-
-off <- off %>% arrange(desc(off_epa))
-def <- def %>% arrange(def_epa)
-
-# Apply regression to the mean based on sample size
-avg_plays <- mean(c(off$off_plays, def$def_plays))
-regression_factor <- 0.3
-
-off <- off %>%
+# Create final table
+handl <- team_ratings %>%
   mutate(
-    reliability = pmin(off_plays / avg_plays, 1),
-    off_epa = off_epa * (reliability + (1 - reliability) * (1 - regression_factor))
-  )
-
-def <- def %>%
-  mutate(
-    reliability = pmin(def_plays / avg_plays, 1),
-    def_epa = def_epa * (reliability + (1 - reliability) * (1 - regression_factor))
-  )
-
-cat("Creating HANDL ratings table...\n")
-
-handl <- left_join(
-  off %>% select(pos_team, off_epa),
-  def %>% select(def_pos_team, def_epa),
-  by = c("pos_team" = "def_pos_team")
-)
-
-handl <- handl %>%
-  mutate(
-    rating = round((off_epa - def_epa) * 100, 2),
-    off_epa = round(off_epa * 100, 2),
-    def_epa = round(def_epa * -100, 2)
+    rating = round(raw_rating * 100, 2),
+    off_display = round(off_epa * 100, 2),
+    def_display = round(def_epa * -100, 2)  # Flip sign so higher = better defense
   ) %>%
   arrange(desc(rating)) %>%
-  select(pos_team, rating, off_epa, def_epa) %>%
+  select(pos_team, rating, off_display, def_display) %>%
   rename(
     Team = pos_team,
     'HANDL Rating' = rating,
-    'Off Rating' = off_epa,
-    'Def Rating' = def_epa
+    'Off Rating' = off_display,
+    'Def Rating' = def_display
   )
 
 handl <- handl %>%
@@ -113,7 +71,19 @@ handl <- handl %>%
 handl$logo <- paste0('<img src="', handl$logo, '" height="40">')
 handl <- handl %>% arrange(desc(`HANDL Rating`)) %>% rename(" " = logo)
 
-cat("Generating HTML table...\n")
+# Print top 20 for verification
+cat("\n========== TOP 20 TEAMS ==========\n")
+print(handl %>% select(Team, `HANDL Rating`, `HANDL Rank`, `Off Rank`, `Def Rank`) %>% head(20))
+
+# Print playoff teams
+cat("\n========== 2024 PLAYOFF TEAMS ==========\n")
+playoff_teams <- c("Notre Dame", "Ohio State", "Texas", "Penn State", "Oregon", "Georgia",
+                   "Boise State", "Arizona State", "Clemson", "Tennessee", "SMU", "Indiana")
+print(handl %>% filter(Team %in% playoff_teams) %>%
+        select(Team, `HANDL Rating`, `HANDL Rank`, `Off Rank`, `Def Rank`) %>%
+        arrange(`HANDL Rank`))
+
+cat("\nGenerating HTML table...\n")
 
 w <- datatable(
   handl,
